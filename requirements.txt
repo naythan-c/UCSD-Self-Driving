@@ -1,0 +1,5 @@
+open3d==0.17.0
+pygame==2.5.0
+pybullet==3.2.5
+numpy==1.23.1
+matplotlib==3.7.2
