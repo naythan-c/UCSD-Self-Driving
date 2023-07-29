@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 # PYBULLET
 
 # Tuning Parameters
-translation = [5, 3]
+translation = [5, 9]
 stretching = [1.5, 1]
 
 gap_threshold = 40  # min gap a car fits through
@@ -54,24 +54,24 @@ car = p.loadURDF("racecar/racecar.urdf")
 # Define the race position
 race_position = [0, 0, 0]  # [x, y, z]
 
-def too_close(new_barrier, existing_barriers, min_distance=1.25):
+def too_close(new_barrier, existing_barriers, min_distance=0.5):
     for barrier in existing_barriers:
         dist = math.sqrt((new_barrier[0]-barrier[0])**2 + (new_barrier[1]-barrier[1])**2)
         if dist < min_distance:
             return True
     return False
 
-BARRIER = []
-# BARRIER = [[3, -0.4], [3.5, 0.7], [3.7, 0], [4, -0.5], [5, 0.6]]
-# BARRIER = [[5, 0]]
+# BARRIER = [[3, 0]]
+BARRIER = [[2, -0.1], [3.5, 0.3], [3.7, 0], [4, -1], [5, 1.2]]
+# BARRIER = [[3, 0]]
 
-while len(BARRIER) < 45:  # Create 25 barriers
-    new_barrier = [random.uniform(2, 38), random.uniform(-1, 1)]
-    if not too_close(new_barrier, BARRIER):
-        BARRIER.append(new_barrier)
+# while len(BARRIER) < 10:  # Create 25 barriers
+#     new_barrier = [random.uniform(2, 5), random.uniform(-2, 2)]
+#     if not too_close(new_barrier, BARRIER):
+#         BARRIER.append(new_barrier)
 
 # Cylinder shape for 7the barriers
-cylinder_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.15, height=0.5)
+cylinder_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.1, height=0.5)
 
 # Generate the barriers in the simulation
 for coordinate in BARRIER:
@@ -334,7 +334,7 @@ class Spot:
         return False
 
 
-def inflate_obstacles(grid, inflate_range=0):
+def inflate_obstacles(grid, inflate_range=1):
     inflation = []
     for row in grid:
         for spot in row:
@@ -480,13 +480,7 @@ def main(win, width):
     # pygame.quit()
 
 
-main(WIN, WIDTH)
 
-# AUTOPILOT
-for wheel in inactive_wheels:
-    p.setJointMotorControl2(
-        car, wheel, p.VELOCITY_CONTROL, targetVelocity=0, force=0)
-steering = [4, 6]
 
 
 def moveTo(targetX, targetY):
@@ -515,6 +509,7 @@ def moveTo(targetX, targetY):
             steeringAngle = h[2] - theta
         else:
             steeringAngle = theta - h[2]
+        
 
         for wheel in wheels:
             p.setJointMotorControl2(car,
@@ -539,15 +534,24 @@ def moveTo(targetX, targetY):
         p.stepSimulation()
         time.sleep(0.01)
 
+
+main(WIN, WIDTH)
+
+# AUTOPILOT
+for wheel in inactive_wheels:
+    p.setJointMotorControl2(
+        car, wheel, p.VELOCITY_CONTROL, targetVelocity=0, force=0)
+steering = [4, 6]
+
 PATH.reverse()
 
-target_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.1, height=4)
-target_pos = PATH[-1]
-p.createMultiBody(
-        baseMass=1.0,
-        baseCollisionShapeIndex=target_shape,
-        basePosition=[target_pos[0], target_pos[1], 2],
-    )
+# target_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.1, height=4)
+# target_pos = PATH[-1]
+# p.createMultiBody(
+#         baseMass=1.0,
+#         baseCollisionShapeIndex=target_shape,
+#         basePosition=[target_pos[0], target_pos[1], 2],
+#     )
 
 for coordinate in PATH:
     moveTo(coordinate[0], coordinate[1])
