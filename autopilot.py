@@ -27,7 +27,6 @@ def updatePosition():
     y = pos[1]
     z = pos[2]
 
-
 # Tuning Parameters
 translation = [-3, -5]
 stretching = [0.8, 1]
@@ -92,8 +91,7 @@ inactive_wheels = [5, 7]
 wheels = [2, 3]
 
 for wheel in inactive_wheels:
-    p.setJointMotorControl2(
-        car, wheel, p.VELOCITY_CONTROL, targetVelocity=0, force=0)
+    p.setJointMotorControl2(car, wheel, p.VELOCITY_CONTROL, targetVelocity=0, force=0)
 steering = [4, 6]
 
 
@@ -106,8 +104,6 @@ cylinder_shape = p.createCollisionShape(
     p.GEOM_CYLINDER, radius=0.15, height=0.5)
 
 # Function to check if a new barrier is too close to existing ones
-
-
 def too_close(new_barrier, existing_barriers, min_distance=1):
     for barrier in existing_barriers:
         dist = math.sqrt((new_barrier[0]-barrier[0])
@@ -115,7 +111,6 @@ def too_close(new_barrier, existing_barriers, min_distance=1):
         if dist < min_distance:
             return True
     return False
-
 
 def spawnObstaclesAroundCar():
     new_barrier_polar = [random.uniform(4, 9), random.uniform(-0.4, 0.4)]
@@ -143,8 +138,6 @@ def spawnObstaclesAroundCar():
             del BARRIER_IDS[tuple(oldest_obstacle)]
 
 # DEPTH CAMERA
-
-
 def depth_scan(i):
     updatePosition()
     global x, y, z, heading
@@ -152,8 +145,7 @@ def depth_scan(i):
         cameraDistance=0.1,
         cameraYaw=math.degrees(heading) - 90,
         cameraPitch=10,
-        cameraTargetPosition=[
-            x + math.cos(heading), y + math.sin(heading), z + 0.2],
+        cameraTargetPosition=[x + math.cos(heading), y + math.sin(heading), z + 0.2],
         physicsClientId=0
     )
 
@@ -210,17 +202,17 @@ def depth_scan(i):
     local_map = np.array([[((dimensions - 1) / 2) -
                            (x - ((dimensions - 1) / 2)), y] for x, y in scaled_map]).astype(np.int64)  # flip the y axis along its middle
 
-    local_map[:, 0] = (local_map[:, 0] - ((dimensions - 1) // 2)
-                       ) * stretching[0] + ((dimensions - 1) // 2)
-    local_map[:, 1] = (local_map[:, 1] - ((dimensions - 1) // 2)
-                       ) * stretching[1] + ((dimensions - 1) // 2)
+    local_map[:, 0] = (local_map[:, 0] - ((dimensions - 1) / 2)
+                       ) * stretching[0] + ((dimensions - 1) / 2)
+    local_map[:, 1] = (local_map[:, 1] - ((dimensions - 1) / 2)
+                       ) * stretching[1] + ((dimensions - 1) / 2)
 
     local_map[:, 0] += translation[0]
     local_map[:, 1] += translation[1]
 
     # Check bounds
-    x_condition = (local_map[:, 0] >= 0) & (local_map[:, 0] <= ((dimensions - 1) // 2))
-    y_condition = (local_map[:, 1] >= 0) & (local_map[:, 1] <= ((dimensions - 1) // 2))
+    x_condition = (local_map[:, 0] >= 0) & (local_map[:, 0] <= 24)
+    y_condition = (local_map[:, 1] >= 0) & (local_map[:, 1] <= 24)
 
     # Combine the conditions for x and y using logical AND (&) to get the final condition
     final_condition = x_condition & y_condition
@@ -245,9 +237,9 @@ def save_map(array, filename):
     plt.savefig(filename)
     plt.close()
 
-# Find target gaps
+# Find optimal target
 def find_target(map_points, threshold):
-
+    map_points = np.array(map_points)
     map_points = np.vstack([map_points, [0, 0], [dimensions - 1, 0]])
     sorted_points = map_points[np.argsort(map_points[:, 0])]
 
@@ -263,10 +255,10 @@ def find_target(map_points, threshold):
 
     gaps = np.array(gaps)
     if(len(gaps)) > 0:
-        optimal_gap = np.argmin(np.abs(gaps - ((dimensions - 1) // 2)))
+        optimal_gap = (int) (gaps[np.argmin(np.abs(gaps - ((dimensions - 1) // 2)))])
     else:
-        optimal_gap = (dimensions - 1) // 2 # default center
-
+        optimal_gap = (int) ((dimensions - 1) // 2) # default center
+    print(optimal_gap)
     return optimal_gap
 
 
@@ -422,13 +414,11 @@ def reconstruct_path(came_from, current, draw):
                     scale * ((current.x / (WIDTH/ROWS)) - (ROWS//2))])
         draw()
 
-
 def reset_path(grid, start, end):
     for row in grid:
         for spot in row:
             if spot != start and spot != end and not spot.is_barrier() and not spot.is_inflation():
                 spot.reset()
-
 
 def algorithm(draw, grid, start, end):
     count = 0
@@ -477,7 +467,6 @@ def algorithm(draw, grid, start, end):
 
     return False
 
-
 def make_grid(rows, width):  # makes grid
     grid = []
     gap = width // rows
@@ -486,9 +475,7 @@ def make_grid(rows, width):  # makes grid
         for j in range(rows):
             spot = Spot(i, j, gap, rows)
             grid[i].append(spot)
-
     return grid  # 2 dimensional list
-
 
 def draw_grid(win, rows, width):  # draws gridlines
     gap = width // rows
@@ -497,7 +484,6 @@ def draw_grid(win, rows, width):  # draws gridlines
         for j in range(rows):
             pygame.draw.line(win, GREY, (j * gap, 0), (j * gap, width))
 
-
 def draw(win, grid, rows, width):
     win.fill(WHITE)
     for row in grid:
@@ -505,7 +491,6 @@ def draw(win, grid, rows, width):
             spot.draw(win)  # draws each box color
     draw_grid(win, rows, width)  # draws gridlines
     pygame.display.update()  # update display
-
 
 def main(win, width):
     grid = make_grid(ROWS, width)
@@ -519,22 +504,32 @@ def main(win, width):
 
     reset_path(grid, start, end)
     inflate_obstacles(grid)  # Inflate obstacles before running the algorithm
+    
+    array_2d = []
+    for row in grid:
+        for spot in row:
+            if spot.is_barrierinflation():
+                obstacle_row, obstacle_col = spot.get_pos()
+                array_2d.append([(obstacle_row - 1), 0])
+                # array_2d[obstacle_row - 1, obstacle_col - 1] = 1
+    np.set_printoptions(threshold=np.inf)
+    # print(array_2d)
+
+    
     start = grid[ROWS//2][0]
     start.make_start()
-    end = grid[ROWS//2][ROWS//2]
+    end = grid[find_target(array_2d, 4)][ROWS//2]
     end.make_end()
     for row in grid:
         for spot in row:
             spot.update_neighbors(grid)
     algorithm(lambda: draw(win, grid, ROWS, width), grid, start, end)
-    # pygame.quit()
 
 
 def setReferencePointAsCurrentPosition():
     updatePosition()
     global referencePoint
     referencePoint = [x, y]
-
 
 def moveTo(targetX, targetY):
     updatePosition()
@@ -604,6 +599,7 @@ def moveTo(targetX, targetY):
                 steeringAngle = steeringAngle + 1
                 targetVelocity = targetVelocity + 10
 
+
         for wheel in wheels:
             p.setJointMotorControl2(car,
                                     wheel,
@@ -626,29 +622,26 @@ def moveTo(targetX, targetY):
         p.stepSimulation()
         time.sleep(0.01)
 
-
 def straightenOut():
     while abs(heading) > 0.1:
         updatePosition()
         for steer in steering:
             p.setJointMotorControl2(
                 car, steer, p.POSITION_CONTROL, targetPosition=(0 - heading))
-
-
+            
 def stop():
     for wheel in wheels:
-        p.setJointMotorControl2(car,
-                                wheel,
-                                p.VELOCITY_CONTROL,
-                                targetVelocity=0,
-                                force=20)
+            p.setJointMotorControl2(car,
+                                    wheel,
+                                    p.VELOCITY_CONTROL,
+                                    targetVelocity=0,
+                                    force=20)
 
 
 # AUTOPILOT
 i = 0
 while (True):
     local_map = depth_scan(i)
-    print(f"Target{i} = {find_target(local_map, 3)}")
     i += 1
     PATH = []
     local_map[:, 1] *= -1
@@ -656,7 +649,8 @@ while (True):
     local_map[:, 0] *= 2
     WIN = pygame.display.set_mode((WIDTH, WIDTH))
     pygame.display.set_caption("A* Path Finding Algorithm")
-    main(WIN, WIDTH)
+    grid = main(WIN, WIDTH)
+    print(grid)
     PATH.reverse()
     # p.createMultiBody(
     #     baseMass=1.0,
