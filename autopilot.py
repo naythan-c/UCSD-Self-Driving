@@ -10,12 +10,27 @@ import random
 import json
 import matplotlib.pyplot as plt
 
+
 # PYBULLET
 
-# Tuning Parameters
-translation = [5, 9]
-stretching = [1.5, 1]
+x = 0
+y = 0
+z = 0
+heading = 0
 
+
+def updatePosition():
+    global x, y, z, heading
+    pos, hquat = p.getBasePositionAndOrientation(car)
+    heading = p.getEulerFromQuaternion(hquat)[2]
+    x = pos[0]
+    y = pos[1]
+    z = pos[2]
+
+
+# Tuning Parameters
+translation = [-3, -5]
+stretching = [0.8, 1]
 gap_threshold = 40  # min gap a car fits through
 car_buffer = 20  # close obstacles
 steering_constant = 0.005  # nerf correction
@@ -26,8 +41,10 @@ zone_width = 30  # obstacle meters
 zone_depth = 30  # obstacle meters
 num_cubes = 30  # Number of cubes to load
 
-dimensions = 25 # resolution
-scale = 0.3 # pygame to world coordinates
+dimensions = 50  # resolution
+scale = 0.16  # pygame to world coordinates
+
+referencePoint = [0, 0]
 
 # Physics
 physicsClient = p.connect(p.GUI)  # or p.DIRECT for non-graphical version
@@ -48,140 +65,173 @@ p.resetDebugVisualizerCamera(
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
 # Assets
-p.loadSDF("stadium.sdf")
+p.loadURDF("plane.urdf")
 car = p.loadURDF("racecar/racecar.urdf")
 
 # Define the race position
 race_position = [0, 0, 0]  # [x, y, z]
 
-def too_close(new_barrier, existing_barriers, min_distance=0.5):
-    for barrier in existing_barriers:
-        dist = math.sqrt((new_barrier[0]-barrier[0])**2 + (new_barrier[1]-barrier[1])**2)
-        if dist < min_distance:
-            return True
-    return False
+# Init
+start_time = time.time()
+elapsed_time = 0
 
-# BARRIER = [[3, 0]]
-BARRIER = [[2, -0.1], [3.5, 0.3], [3.7, 0], [4, -1], [5, 1.2]]
-# BARRIER = [[3, 0]]
+BARRIER = [[2, 0]]
 
-# while len(BARRIER) < 10:  # Create 25 barriers
-#     new_barrier = [random.uniform(2, 5), random.uniform(-2, 2)]
-#     if not too_close(new_barrier, BARRIER):
-#         BARRIER.append(new_barrier)
+cylinder_shape = p.createCollisionShape(
+    p.GEOM_CYLINDER, radius=0.15, height=0.5)
 
-# Cylinder shape for 7the barriers
-cylinder_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.1, height=0.5)
-
-# Generate the barriers in the simulation
 for coordinate in BARRIER:
-    box_body = p.createMultiBody(
+    p.createMultiBody(
         baseMass=1.0,
         baseCollisionShapeIndex=cylinder_shape,
         basePosition=[coordinate[0], coordinate[1], 0.3],
     )
 
-
-# Init
-start_time = time.time()
-elapsed_time = 0
-
 # Wheels
 inactive_wheels = [5, 7]
 wheels = [2, 3]
 
-# Driving
-while (elapsed_time < 0.4):
-    print(elapsed_time)
-    elapsed_time = time.time() - start_time
-    for wheel in wheels:
-        p.setJointMotorControl2(car,
-                                wheel,
-                                p.VELOCITY_CONTROL,
-                                targetVelocity=10,
-                                force=1)
-    pos, hquat = p.getBasePositionAndOrientation(car)
-    h = p.getEulerFromQuaternion(hquat)
+for wheel in inactive_wheels:
+    p.setJointMotorControl2(
+        car, wheel, p.VELOCITY_CONTROL, targetVelocity=0, force=0)
+steering = [4, 6]
+
+
+BARRIER = []  # List to hold generated barriers
+BARRIER_IDS = {}  # Dictionary to hold generated barriers along with their IDs
+MAX_OBSTACLES = 40
+
+# Cylinder shape for the barriers
+cylinder_shape = p.createCollisionShape(
+    p.GEOM_CYLINDER, radius=0.15, height=0.5)
+
+# Function to check if a new barrier is too close to existing ones
+
+
+def too_close(new_barrier, existing_barriers, min_distance=1):
+    for barrier in existing_barriers:
+        dist = math.sqrt((new_barrier[0]-barrier[0])
+                         ** 2 + (new_barrier[1]-barrier[1])**2)
+        if dist < min_distance:
+            return True
+    return False
+
+
+def spawnObstaclesAroundCar():
+    new_barrier_polar = [random.uniform(4, 9), random.uniform(-0.4, 0.4)]
+    new_barrier_cartesian = [new_barrier_polar[0] * math.cos(new_barrier_polar[1]) + x,
+                             new_barrier_polar[0] * math.sin(new_barrier_polar[1]) + y]
+    # global BARRIER
+    if not too_close(new_barrier_cartesian, BARRIER):
+        BARRIER.append(new_barrier_cartesian)
+
+        # Generate the barriers in the simulation
+        obstacle_id = p.createMultiBody(
+            baseMass=1.0,
+            baseCollisionShapeIndex=cylinder_shape,
+            basePosition=[new_barrier_cartesian[0],
+                          new_barrier_cartesian[1], 0.3],
+        )
+
+        # Add the obstacle id to the dictionary
+        BARRIER_IDS[tuple(new_barrier_cartesian)] = obstacle_id
+
+        if len(BARRIER) > MAX_OBSTACLES:
+            # Remove the oldest obstacle
+            oldest_obstacle = BARRIER.pop(0)
+            p.removeBody(BARRIER_IDS[tuple(oldest_obstacle)])
+            del BARRIER_IDS[tuple(oldest_obstacle)]
+
+# DEPTH CAMERA
+
+
+def depth_scan(i):
+    updatePosition()
+    global x, y, z, heading
     p.resetDebugVisualizerCamera(
         cameraDistance=0.1,
-        cameraYaw=math.degrees(h[2]) - 90,
+        cameraYaw=math.degrees(heading) - 90,
         cameraPitch=10,
         cameraTargetPosition=[
-            pos[0] + math.cos(h[2]), pos[1] + math.sin(h[2]), pos[2] + 0.2],
+            x + math.cos(heading), y + math.sin(heading), z + 0.2],
         physicsClientId=0
     )
 
-# DEPTH CAMERA
-p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-cam_info = p.getDebugVisualizerCamera()
-view_matrix = cam_info[2]
-proj_matrix = cam_info[3]
-width, height, rgb_img, depth_img, seg_img = p.getCameraImage(
-    256, 256, viewMatrix=view_matrix, projectionMatrix=proj_matrix
-)
-depth = np.array(depth_img).reshape((256, 256))
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    cam_info = p.getDebugVisualizerCamera()
+    view_matrix = cam_info[2]
+    proj_matrix = cam_info[3]
+    width, height, rgb_img, depth_img, seg_img = p.getCameraImage(
+        256, 256, viewMatrix=view_matrix, projectionMatrix=proj_matrix
+    )
+    depth = np.array(depth_img).reshape((256, 256))
 
-# POINT CLOUD
-projection = np.array(proj_matrix).reshape(4, 4)
-fx = projection[0][0]
-fy = -projection[1][1]
-cx = projection[0][2]
-cy = projection[1][2]
+    # POINT CLOUD
+    projection = np.array(proj_matrix).reshape(4, 4)
+    fx = projection[0][0]
+    fy = -projection[1][1]
+    cx = projection[0][2]
+    cy = projection[1][2]
 
-# Generate point cloud
-v, u = np.indices(depth.shape)
-z = depth.copy()
-valid_mask = (z > 0)
+    # Generate point cloud
+    v, u = np.indices(depth.shape)
+    z = depth.copy()
+    valid_mask = (z > 0)
 
-x = (u - cx) * z / fx
-y = (v - cy) * z / fy + 150
-point_cloud = np.column_stack(
-    (x[valid_mask], y[valid_mask], 10000 - z[valid_mask] * 10000))
+    x = (u - cx) * z / fx
+    y = (v - cy) * z / fy + 150
+    point_cloud = np.column_stack(
+        (x[valid_mask], y[valid_mask], 10000 - z[valid_mask] * 10000))
 
-# Convert the angle to radians
-theta = math.radians(12)
+    # Convert the angle to radians
+    theta = math.radians(12)
 
-# Define the rotation matrix around the x-axis
-R_x = np.array([
-    [1, 0, 0],
-    [0, np.cos(theta), -np.sin(theta)],
-    [0, np.sin(theta), np.cos(theta)]
-])
+    # Define the rotation matrix around the x-axis
+    R_x = np.array([
+        [1, 0, 0],
+        [0, np.cos(theta), -np.sin(theta)],
+        [0, np.sin(theta), np.cos(theta)]
+    ])
 
-rotated_points = np.dot(point_cloud, R_x)
+    rotated_points = np.dot(point_cloud, R_x)
 
+    # Filter background and ground
+    obstacles = rotated_points[(rotated_points[:, 2] > 0)
+                               & (rotated_points[:, 1] > 0.5)]
 
-# Filter background and ground
-obstacles = rotated_points[(rotated_points[:, 2] > 0)
-                           & (rotated_points[:, 1] > 0.5)]
+    # 2D map
+    map = obstacles.copy()
+    map[:, 1], map[:, 2] = obstacles[:, 2], obstacles[:, 1]
+    map[:, 2] = 0
+    map = map[:, :2]
 
-# 2D map
-map = obstacles.copy()
-map[:, 1], map[:, 2] = obstacles[:, 2], obstacles[:, 1]
-map[:, 2] = 0
-map = map[:, :2]
+    # Transform map
+    scaled_map = map * ((dimensions - 1) / 238)  # scale it down
+    local_map = np.array([[((dimensions - 1) / 2) -
+                           (x - ((dimensions - 1) / 2)), y] for x, y in scaled_map]).astype(np.int64)  # flip the y axis along its middle
 
-# Transform map
-scaled_map = map * ((dimensions - 1) / 238) # scale it down
-local_map = np.array([[((dimensions - 1) / 2) -
-                       (x - ((dimensions - 1) / 2)), y] for x, y in scaled_map]).astype(np.int64) # flip the y axis along its middle
+    local_map[:, 0] = (local_map[:, 0] - ((dimensions - 1) // 2)
+                       ) * stretching[0] + ((dimensions - 1) // 2)
+    local_map[:, 1] = (local_map[:, 1] - ((dimensions - 1) // 2)
+                       ) * stretching[1] + ((dimensions - 1) // 2)
 
-local_map[:, 0] += translation[0]
-local_map[:, 1] += translation[1]
+    local_map[:, 0] += translation[0]
+    local_map[:, 1] += translation[1]
 
-local_map[:, 0] = (local_map[:, 0] - ((dimensions - 1) / 2)) * stretching[0] + ((dimensions - 1) / 2)
-local_map[:, 1] = (local_map[:, 1] - ((dimensions - 1) / 2)) * stretching[1] + ((dimensions - 1) / 2)
+    # Check bounds
+    x_condition = (local_map[:, 0] >= 0) & (local_map[:, 0] <= ((dimensions - 1) // 2))
+    y_condition = (local_map[:, 1] >= 0) & (local_map[:, 1] <= ((dimensions - 1) // 2))
 
-# Check bounds
-x_condition = (local_map[:, 0] >= 0) & (local_map[:, 0] <= 24)
-y_condition = (local_map[:, 1] >= 0) & (local_map[:, 1] <= 24)
+    # Combine the conditions for x and y using logical AND (&) to get the final condition
+    final_condition = x_condition & y_condition
 
-# Combine the conditions for x and y using logical AND (&) to get the final condition
-final_condition = x_condition & y_condition
+    # Apply boolean indexing to get the filtered array
+    local_map = local_map[final_condition]
 
-# Apply boolean indexing to get the filtered array
-local_map = local_map[final_condition]
-
+    # Save image
+    plt.imsave(f'autopilot_img/depth_{i}.png', depth)
+    save_map(local_map, f'autopilot_img/local_map_{i}.png')
+    return local_map
 
 # Save local_map
 def save_map(array, filename):
@@ -195,30 +245,34 @@ def save_map(array, filename):
     plt.savefig(filename)
     plt.close()
 
+# Find target gaps
+def find_target(map_points, threshold):
 
-# Debug
-# np.set_printoptions(threshold=np.inf)
-# data = {
-#     'local_map': local_map.tolist()
-# }
-# with open('local_map.json', 'w') as f:
-#     json.dump(data, f)
+    map_points = np.vstack([map_points, [0, 0], [dimensions - 1, 0]])
+    sorted_points = map_points[np.argsort(map_points[:, 0])]
 
-# reshaped_depth_img = np.reshape(depth, (256, 256))
-                                            
-# depth_data = {
-#     'depth': reshaped_depth_img.tolist(),
-#     'proj_matrix': proj_matrix
-# }
-# with open('depth_output.json', 'w') as f:
-#     json.dump(depth_data, f)
+    gaps = []
+    for j in range(len(sorted_points) - 1):
+        curr_point = sorted_points[j]
+        next_point = sorted_points[j + 1]
+        gap_size = next_point[0] - curr_point[0]
 
-plt.imsave(f'autopilot_img/depth.png', depth)
-save_map(local_map, f'autopilot_img/local_map.png')
+        if gap_size > threshold:
+            gap_center = (curr_point[0] + next_point[0]) / 2
+            gaps.append(gap_center)
+
+    gaps = np.array(gaps)
+    if(len(gaps)) > 0:
+        optimal_gap = np.argmin(np.abs(gaps - ((dimensions - 1) // 2)))
+    else:
+        optimal_gap = (dimensions - 1) // 2 # default center
+
+    return optimal_gap
+
 
 # ASTAR
 WIDTH = 500
-ROWS = 25
+ROWS = 50
 WIN = pygame.display.set_mode((WIDTH, WIDTH))
 pygame.display.set_caption("A* Path Finding Algorithm")
 
@@ -233,9 +287,6 @@ ORANGE = (255, 165, 0)
 GREY = (128, 128, 128)
 TURQUOISE = (64, 224, 208)
 
-PATH = []
-local_map[:, 1] *= -1
-local_map[:, 1] += 24
 
 class Spot:
     def __init__(self, row, col, width, total_rows):
@@ -367,7 +418,8 @@ def reconstruct_path(came_from, current, draw):
     while current in came_from:
         current = came_from[current]
         current.make_path()
-        PATH.append([scale * (current.y / 20), scale * ((current.x / 20) - 12)])
+        PATH.append([scale * (current.y / (WIDTH/ROWS)),
+                    scale * ((current.x / (WIDTH/ROWS)) - (ROWS//2))])
         draw()
 
 
@@ -448,11 +500,9 @@ def draw_grid(win, rows, width):  # draws gridlines
 
 def draw(win, grid, rows, width):
     win.fill(WHITE)
-
     for row in grid:
         for spot in row:
             spot.draw(win)  # draws each box color
-
     draw_grid(win, rows, width)  # draws gridlines
     pygame.display.update()  # update display
 
@@ -463,16 +513,16 @@ def main(win, width):
     end = None
 
     draw(win, grid, ROWS, width)
-    start = grid[12][0]
-    start.make_start()
-    end = grid[12][24]
-    end.make_end()
 
     for coordinate in local_map:
         grid[coordinate[0]][coordinate[1]].make_barrier()
 
     reset_path(grid, start, end)
     inflate_obstacles(grid)  # Inflate obstacles before running the algorithm
+    start = grid[ROWS//2][0]
+    start.make_start()
+    end = grid[ROWS//2][ROWS//2]
+    end.make_end()
     for row in grid:
         for spot in row:
             spot.update_neighbors(grid)
@@ -480,23 +530,27 @@ def main(win, width):
     # pygame.quit()
 
 
-
+def setReferencePointAsCurrentPosition():
+    updatePosition()
+    global referencePoint
+    referencePoint = [x, y]
 
 
 def moveTo(targetX, targetY):
-    pos, hquat = p.getBasePositionAndOrientation(car)
-    h = p.getEulerFromQuaternion(hquat)
-    x = pos[0]
-    y = pos[1]
-    distance = math.sqrt((targetX - x)**2 + (targetY - y)**2)
-    theta = math.atan2((targetY - y), (targetX - x))
+    updatePosition()
+    globalTargetX = targetX + referencePoint[0]
+    globalTargetY = targetY + referencePoint[1]
+    distance = math.sqrt((globalTargetX - x)**2 + (globalTargetY - y)**2)
+    theta = math.atan2((globalTargetY - y), (globalTargetX - x))
+
     while distance > 1:
-        pos, hquat = p.getBasePositionAndOrientation(car)
-        h = p.getEulerFromQuaternion(hquat)
-        x = pos[0]
-        y = pos[1]
-        distance = math.sqrt((targetX - x)**2 + (targetY - y)**2)
-        theta = math.atan2((targetY - y), (targetX - x))
+        updatePosition()
+        spawnObstaclesAroundCar()
+        spawnObstaclesAroundCar()
+        spawnObstaclesAroundCar()
+        distance = math.sqrt((globalTargetX - x)**2 + (globalTargetY - y)**2)
+        theta = math.atan2((globalTargetY - y), (globalTargetX - x))
+
         maxForce = 20
         targetVelocity = 10*distance
 
@@ -504,12 +558,51 @@ def moveTo(targetX, targetY):
         if targetVelocity > 20:
             targetVelocity = 20
 
-        steeringAngle = theta - h[2]
-        if steeringAngle > (math.pi / 2) or steeringAngle < -(math.pi / 2):
-            steeringAngle = h[2] - theta
+        steeringAngle = theta - heading
+        if abs(steeringAngle) > (math.pi):
+            steeringAngle = heading - theta
         else:
-            steeringAngle = theta - h[2]
-        
+            steeringAngle = theta - heading
+        view_matrix_car = p.computeViewMatrix(
+            cameraEyePosition=[
+                x + 0.5*math.cos(heading), y + 0.5*math.sin(heading), z + 0.1],
+            cameraTargetPosition=[
+                x + 2*math.cos(heading), y + 2*math.sin(heading), z + 0.05],
+            cameraUpVector=[0, 0, 1]
+        )
+        projection_matrix_car = p.computeProjectionMatrixFOV(
+            fov=80,  # field of view
+            aspect=1.0,  # aspect ratio
+            nearVal=0.1,  # near clipping plane
+            farVal=100.0  # far clipping plane
+        )
+
+        img_arr = p.getCameraImage(256, 256, viewMatrix=view_matrix_car,
+                                   projectionMatrix=projection_matrix_car, renderer=p.ER_BULLET_HARDWARE_OPENGL)
+        depth_buf = np.reshape(img_arr[3], (256, 256))
+        depth_img = 1 - np.array(depth_buf)
+        firsthalf = depth_img[0][:128]
+        totalfirsthalf = sum(firsthalf)
+        secondhalf = depth_img[0][128:]
+        totalsecondhalf = sum(secondhalf)
+        middle = depth_img[0][54:202]
+        totalmiddle = sum(middle)
+
+        steer_reset_speed = 0.001
+
+        if steeringAngle != 0:
+            if steeringAngle > 0:
+                steeringAngle = max(0, steeringAngle - steer_reset_speed)
+            elif steeringAngle < 0:
+                steeringAngle = min(0, steeringAngle + steer_reset_speed)
+
+        if totalmiddle > 0:
+            if totalfirsthalf > totalsecondhalf:
+                steeringAngle = steeringAngle - 1
+                targetVelocity = targetVelocity + 10
+            else:
+                steeringAngle = steeringAngle + 1
+                targetVelocity = targetVelocity + 10
 
         for wheel in wheels:
             p.setJointMotorControl2(car,
@@ -523,11 +616,10 @@ def moveTo(targetX, targetY):
                 car, steer, p.POSITION_CONTROL, targetPosition=steeringAngle)
 
         p.resetDebugVisualizerCamera(
-            cameraDistance=0.1,
-            cameraYaw=math.degrees(h[2]) - 90,
-            cameraPitch=10,
-            cameraTargetPosition=[
-                pos[0] + math.cos(h[2]), pos[1] + math.sin(h[2]), pos[2] + 0.2],
+            cameraDistance=10,
+            cameraYaw=-90,
+            cameraPitch=-45,
+            cameraTargetPosition=[x + 5, y, z],
             physicsClientId=0
         )
 
@@ -535,24 +627,44 @@ def moveTo(targetX, targetY):
         time.sleep(0.01)
 
 
-main(WIN, WIDTH)
+def straightenOut():
+    while abs(heading) > 0.1:
+        updatePosition()
+        for steer in steering:
+            p.setJointMotorControl2(
+                car, steer, p.POSITION_CONTROL, targetPosition=(0 - heading))
+
+
+def stop():
+    for wheel in wheels:
+        p.setJointMotorControl2(car,
+                                wheel,
+                                p.VELOCITY_CONTROL,
+                                targetVelocity=0,
+                                force=20)
+
 
 # AUTOPILOT
-for wheel in inactive_wheels:
-    p.setJointMotorControl2(
-        car, wheel, p.VELOCITY_CONTROL, targetVelocity=0, force=0)
-steering = [4, 6]
-
-PATH.reverse()
-
-# target_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.1, height=4)
-# target_pos = PATH[-1]
-# p.createMultiBody(
-#         baseMass=1.0,
-#         baseCollisionShapeIndex=target_shape,
-#         basePosition=[target_pos[0], target_pos[1], 2],
-#     )
-
-for coordinate in PATH:
-    moveTo(coordinate[0], coordinate[1])
-time.sleep(3)
+i = 0
+while (True):
+    local_map = depth_scan(i)
+    print(f"Target{i} = {find_target(local_map, 3)}")
+    i += 1
+    PATH = []
+    local_map[:, 1] *= -1
+    local_map[:, 1] += 24
+    local_map[:, 0] *= 2
+    WIN = pygame.display.set_mode((WIDTH, WIDTH))
+    pygame.display.set_caption("A* Path Finding Algorithm")
+    main(WIN, WIDTH)
+    PATH.reverse()
+    # p.createMultiBody(
+    #     baseMass=1.0,
+    #     baseCollisionShapeIndex=p.createCollisionShape(p.GEOM_CYLINDER, radius=0.1, height=6),
+    #     basePosition=[PATH[-1][0] + referencePoint[0], PATH[-1][1] + referencePoint[1], 3],
+    # )
+    setReferencePointAsCurrentPosition()
+    for index, coordinate in enumerate(PATH):
+        moveTo(coordinate[0], coordinate[1])
+    straightenOut()
+    stop()
